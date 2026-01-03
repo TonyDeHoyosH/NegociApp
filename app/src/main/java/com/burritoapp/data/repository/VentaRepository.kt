@@ -6,6 +6,7 @@ import com.burritoapp.data.dao.GastoFijoDao
 import com.burritoapp.data.dao.ConfiguracionDao
 import com.burritoapp.data.entity.Venta
 import com.burritoapp.data.entity.VentaConProducto
+import com.burritoapp.data.entity.ProductoConMateriaPrima
 import com.burritoapp.data.entity.EstadoVenta
 import com.burritoapp.data.entity.Producto
 import com.burritoapp.data.model.ResumenVentas
@@ -92,5 +93,21 @@ class VentaRepository(
             gananciaNeta = gananciaNeta,
             porcentajeLogrado = porcentajeLogrado
         )
+    }
+    
+    suspend fun getUnidadesDisponibles(productoId: Int, fecha: String, ventaExcluidaId: Int? = null): Int {
+        // Obtener producto
+        val producto = productoDao.getProductoConMateriaPrima(productoId) ?: return 0
+        val totalProducido = producto.producto.cantidadProducida ?: 0
+        
+        // Obtener ventas del día
+        val ventasDelDia = ventaDao.getVentasDelDia(fecha).first()
+        
+        // Sumar unidades vendidas (excluyendo la venta que se está editando)
+        val unidadesVendidas = ventasDelDia
+            .filter { it.venta.productoId == productoId && it.venta.id != ventaExcluidaId }
+            .sumOf { it.venta.cantidad }
+        
+        return totalProducido - unidadesVendidas
     }
 }

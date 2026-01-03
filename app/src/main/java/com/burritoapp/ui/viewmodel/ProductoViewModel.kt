@@ -7,6 +7,7 @@ import com.burritoapp.data.database.AppDatabase
 import com.burritoapp.data.entity.Producto
 import com.burritoapp.data.entity.MateriaPrima
 import com.burritoapp.data.entity.ProductoConMateriaPrima
+import com.burritoapp.data.entity.TipoMedicion
 import com.burritoapp.data.repository.ProductoRepository
 import com.burritoapp.data.model.CalculoPrecio
 import kotlinx.coroutines.flow.*
@@ -90,6 +91,14 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
             onSuccess()
         }
     }
+    
+    fun actualizarProductoDelDia(productoId: Int, cantidad: Int, fecha: String, onSuccess: () -> Unit = {}) {
+        viewModelScope.launch {
+            // Actualizar el producto seleccionado
+            repository.registrarProduccionDelDia(productoId, cantidad)
+            onSuccess()
+        }
+    }
 
     suspend fun calcularPrecio(productoId: Int): CalculoPrecio? {
         return repository.calcularPrecio(productoId)
@@ -99,9 +108,10 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
     fun agregarMateriaPrima(
         productoId: Int,
         nombre: String,
-        precioKg: Double?,
+        tipoMedicion: TipoMedicion,
+        precioUnitario: Double?,
         precioPagado: Double?,
-        cantidadKg: Double?,
+        cantidad: Double?,
         onSuccess: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
@@ -109,16 +119,17 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
             val materiaPrima = MateriaPrima(
                 productoId = productoId,
                 nombre = nombre,
-                precioKg = precioKg,
+                tipoMedicion = tipoMedicion,
+                precioUnitario = precioUnitario,
                 precioPagado = precioPagado,
-                cantidadKg = cantidadKg
+                cantidad = cantidad
             )
             
             if (materiaPrima.esValido()) {
                 repository.insertMateriaPrima(materiaPrima)
                 onSuccess()
             } else {
-                onError("Debes llenar al menos 2 campos (Precio/kg, Precio pagado o Cantidad)")
+                onError("Debes llenar al menos 2 campos (Precio unitario, Precio pagado o Cantidad)")
             }
         }
     }

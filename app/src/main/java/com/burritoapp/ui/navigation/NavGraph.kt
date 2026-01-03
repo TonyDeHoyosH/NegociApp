@@ -13,6 +13,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.burritoapp.data.entity.Venta
 import com.burritoapp.ui.components.BotonFlotanteVenta
 import com.burritoapp.ui.components.RegistrarVentaDialog
 import com.burritoapp.ui.screens.configuracion.ConfiguracionScreen
@@ -178,24 +179,55 @@ fun MainNavigation() {
         }
     }
     
-    // Dialog de registrar venta
+    // Dialog de registrar/editar venta
+    var ventaAEditar by remember { mutableStateOf<Venta?>(null) }
+    var unidadesDisponibles by remember { mutableStateOf(0) }
+
     if (mostrarDialogVenta && productoDelDia != null) {
+        // Calcular unidades disponibles
+        LaunchedEffect(productoDelDia, ventaAEditar) {
+            unidadesDisponibles = ventaViewModel.getUnidadesDisponibles(
+                productoDelDia!!.producto.id,
+                ventaAEditar?.id
+            )
+        }
+        
         RegistrarVentaDialog(
             productoDelDia = productoDelDia!!,
             precioSugerido = precioSugeridoVenta,
-            onDismiss = { mostrarDialogVenta = false },
+            unidadesDisponibles = unidadesDisponibles,
+            ventaAEditar = ventaAEditar,
+            onDismiss = { 
+                mostrarDialogVenta = false
+                ventaAEditar = null
+            },
             onRegistrar = { cantidad, precioReal, nota, estado ->
-                ventaViewModel.registrarVenta(
-                    productoId = productoDelDia!!.producto.id,
-                    cantidad = cantidad,
-                    precioSugerido = precioSugeridoVenta,
-                    precioReal = precioReal,
-                    nota = nota,
-                    estado = estado,
-                    onSuccess = {
-                        mostrarDialogVenta = false
-                    }
-                )
+                if (ventaAEditar == null) {
+                    // Registrar nueva venta
+                    ventaViewModel.registrarVenta(
+                        productoId = productoDelDia!!.producto.id,
+                        cantidad = cantidad,
+                        precioSugerido = precioSugeridoVenta,
+                        precioReal = precioReal,
+                        nota = nota,
+                        estado = estado,
+                        onSuccess = {
+                            mostrarDialogVenta = false
+                        }
+                    )
+                } else {
+                    // Actualizar venta existente
+                    ventaViewModel.actualizarVenta(
+                        ventaAEditar!!.copy(
+                            cantidad = cantidad,
+                            precioReal = precioReal,
+                            nota = nota,
+                            estado = estado
+                        )
+                    )
+                    mostrarDialogVenta = false
+                    ventaAEditar = null
+                }
             }
         )
     }

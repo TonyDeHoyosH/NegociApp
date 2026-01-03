@@ -12,6 +12,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.burritoapp.data.entity.ProductoConMateriaPrima
 import com.burritoapp.data.entity.EstadoVenta
+import com.burritoapp.data.entity.Venta
 import java.text.NumberFormat
 import java.util.*
 
@@ -20,24 +21,37 @@ import java.util.*
 fun RegistrarVentaDialog(
     productoDelDia: ProductoConMateriaPrima,
     precioSugerido: Double,
+    unidadesDisponibles: Int,
+    ventaAEditar: Venta? = null,
     onDismiss: () -> Unit,
     onRegistrar: (Int, Double, String, EstadoVenta) -> Unit
 ) {
-    var cantidadStr by remember { mutableStateOf("1") }
-    var precioRealStr by remember { mutableStateOf(String.format("%.2f", precioSugerido)) }
-    var nota by remember { mutableStateOf("") }
-    var estadoSeleccionado by remember { mutableStateOf(EstadoVenta.PAGADO_EFECTIVO) }
+    var cantidadStr by remember { 
+        mutableStateOf(ventaAEditar?.cantidad?.toString() ?: "1") 
+    }
+    var precioRealStr by remember { 
+        mutableStateOf(
+            ventaAEditar?.precioReal?.let { String.format("%.2f", it) } 
+                ?: String.format("%.2f", precioSugerido)
+        )
+    }
+    var nota by remember { mutableStateOf(ventaAEditar?.nota ?: "") }
+    var estadoSeleccionado by remember { 
+        mutableStateOf(ventaAEditar?.estado ?: EstadoVenta.PAGADO_EFECTIVO) 
+    }
     
-    // Calcular monto total
     val cantidad = cantidadStr.toIntOrNull() ?: 0
     val precioReal = precioRealStr.toDoubleOrNull() ?: 0.0
     val montoTotal = cantidad * precioReal
+    
+    // Validación de unidades disponibles
+    val cantidadExcedida = cantidad > unidadesDisponibles
     
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Nueva Venta",
+                text = if (ventaAEditar == null) "Nueva Venta" else "Editar Venta",
                 style = MaterialTheme.typography.titleLarge
             )
         },
@@ -48,14 +62,18 @@ fun RegistrarVentaDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Producto del día
+                // Producto del día con unidades disponibles
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
+                    ),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.padding(12.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = "Producto:",
@@ -66,6 +84,43 @@ fun RegistrarVentaDialog(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
+                        )
+                        Divider(modifier = Modifier.padding(vertical = 4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Unidades disponibles:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "$unidadesDisponibles",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (unidadesDisponibles > 0) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                }
+                            )
+                        }
+                    }
+                }
+                
+                // Advertencia si no hay unidades
+                if (unidadesDisponibles <= 0) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Text(
+                            text = "⚠️ No hay unidades disponibles. Edita la cantidad producida primero.",
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
                         )
                     }
                 }
@@ -78,7 +133,22 @@ fun RegistrarVentaDialog(
                     placeholder = { Text("1") },
                     suffix = { Text("unidades") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = cantidadExcedida || (cantidadStr.isNotEmpty() && cantidad <= 0),
+                    supportingText = {
+                        if (cantidadExcedida) {
+                            Text(
+                                text = "⚠️ Solo hay $unidadesDisponibles unidades disponibles",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        } else if (cantidadStr.isNotEmpty() && cantidad <= 0) {
+                            Text(
+                                text = "⚠️ La cantidad debe ser mayor a 0",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                    enabled = unidadesDisponibles > 0
                 )
                 
                 // Precio sugerido vs precio real
@@ -99,24 +169,34 @@ fun RegistrarVentaDialog(
                         prefix = { Text("$") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
+                        isError = precioRealStr.isNotEmpty() && precioReal <= 0,
                         supportingText = {
                             val diferencia = precioReal - precioSugerido
-                            if (diferencia != 0.0) {
-                                val color = if (diferencia > 0) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.error
+                            when {
+                                precioRealStr.isNotEmpty() && precioReal <= 0 -> {
+                                    Text(
+                                        text = "⚠️ El precio debe ser mayor a 0",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
                                 }
-                                Text(
-                                    text = if (diferencia > 0) {
-                                        "↑ ${formatCurrency(diferencia)} más que el sugerido"
+                                diferencia != 0.0 -> {
+                                    val color = if (diferencia > 0) {
+                                        MaterialTheme.colorScheme.primary
                                     } else {
-                                        "↓ ${formatCurrency(-diferencia)} menos que el sugerido"
-                                    },
-                                    color = color
-                                )
+                                        MaterialTheme.colorScheme.error
+                                    }
+                                    Text(
+                                        text = if (diferencia > 0) {
+                                            "↑ ${formatCurrency(diferencia)} más que el sugerido"
+                                        } else {
+                                            "↓ ${formatCurrency(-diferencia)} menos que el sugerido"
+                                        },
+                                        color = color
+                                    )
+                                }
                             }
-                        }
+                        },
+                        enabled = unidadesDisponibles > 0
                     )
                 }
                 
@@ -127,7 +207,8 @@ fun RegistrarVentaDialog(
                     label = { Text("Nota / Cliente") },
                     placeholder = { Text("Ej: Juan López") },
                     modifier = Modifier.fillMaxWidth(),
-                    maxLines = 2
+                    maxLines = 2,
+                    enabled = unidadesDisponibles > 0
                 )
                 
                 // Estado de pago
@@ -147,12 +228,18 @@ fun RegistrarVentaDialog(
                         ) {
                             RadioButton(
                                 selected = estadoSeleccionado == estado,
-                                onClick = { estadoSeleccionado = estado }
+                                onClick = { estadoSeleccionado = estado },
+                                enabled = unidadesDisponibles > 0
                             )
                             Text(
                                 text = "${estado.getIcono()} ${estado.getNombre()}",
                                 style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                color = if (unidadesDisponibles > 0) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
                     }
@@ -190,12 +277,16 @@ fun RegistrarVentaDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (cantidad > 0 && precioReal > 0) {
+                    if (cantidad > 0 && cantidad <= unidadesDisponibles && precioReal > 0) {
                         onRegistrar(cantidad, precioReal, nota.trim(), estadoSeleccionado)
                     }
-                }
+                },
+                enabled = cantidad > 0 && 
+                         cantidad <= unidadesDisponibles && 
+                         precioReal > 0 &&
+                         unidadesDisponibles > 0
             ) {
-                Text("Registrar Venta")
+                Text(if (ventaAEditar == null) "Registrar Venta" else "Guardar Cambios")
             }
         },
         dismissButton = {

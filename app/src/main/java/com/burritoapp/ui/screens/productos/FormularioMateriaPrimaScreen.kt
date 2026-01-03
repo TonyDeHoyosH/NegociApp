@@ -6,7 +6,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,11 +16,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.burritoapp.data.entity.MateriaPrima
-import com.burritoapp.data.entity.ProductoConMateriaPrima
+import com.burritoapp.data.entity.TipoMedicion
 import com.burritoapp.ui.viewmodel.ProductoViewModel
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.*
 
@@ -33,44 +29,17 @@ fun FormularioMateriaPrimaScreen(
     viewModel: ProductoViewModel = viewModel(),
     onNavigateBack: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    var productoConMP by remember { mutableStateOf<ProductoConMateriaPrima?>(null) }
     var showDialogAgregar by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
-    // Cargar producto con materia prima
-    LaunchedEffect(productoId) {
-        scope.launch {
-            productoConMP = viewModel.productosSemanaActual
-                .filterNotNull()
-                .first()
-                .find { it.producto.id == productoId }
-        }
-    }
-    
-    // Observar cambios en el producto para actualizar la UI en tiempo real
-    val productosSemanaActual by viewModel.productosSemanaActual.collectAsState()
-    LaunchedEffect(productosSemanaActual) {
-        productoConMP = productosSemanaActual.find { it.producto.id == productoId }
+    val productoConMP by produceState<com.burritoapp.data.entity.ProductoConMateriaPrima?>(initialValue = null, productoId) {
+        value = viewModel.productosSemanaActual.value.find { it.producto.id == productoId }
     }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
-                    Column {
-                        Text("Materia Prima")
-                        Text(
-                            text = nombreProducto,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
-                    }
-                },
+                title = { Text(nombreProducto) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
@@ -82,7 +51,7 @@ fun FormularioMateriaPrimaScreen(
                 onClick = { showDialogAgregar = true },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Agregar ingrediente")
+                Icon(Icons.Default.Add, contentDescription = "Agregar Ingrediente")
             }
         }
     ) { padding ->
@@ -198,13 +167,14 @@ fun FormularioMateriaPrimaScreen(
                 showDialogAgregar = false
                 errorMessage = null
             },
-            onAgregar = { nombre, precioKg, precioPagado, cantidadKg ->
+            onAgregar = { nombre, tipoMedicion, precioUnitario, precioPagado, cantidad ->
                 viewModel.agregarMateriaPrima(
                     productoId = productoId,
                     nombre = nombre,
-                    precioKg = precioKg,
+                    tipoMedicion = tipoMedicion,
+                    precioUnitario = precioUnitario,
                     precioPagado = precioPagado,
-                    cantidadKg = cantidadKg,
+                    cantidad = cantidad,
                     onSuccess = {
                         showDialogAgregar = false
                         errorMessage = null
@@ -234,33 +204,43 @@ fun MateriaPrimaItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = materiaPrima.nombre,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text(
-                            text = "Precio/kg: ${formatCurrency(materiaPrima.precioKg ?: 0.0)}",
-                            style = MaterialTheme.typography.bodySmall
+                    Text(
+                        text = materiaPrima.nombre,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    // Chip con el tipo de medición
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
                         )
+                    ) {
                         Text(
-                            text = "Cantidad: ${String.format("%.2f", materiaPrima.cantidadKg ?: 0.0)} kg",
-                            style = MaterialTheme.typography.bodySmall
+                            text = materiaPrima.tipoMedicion.getLabel(),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall
                         )
                     }
-                    Text(
-                        text = "Total: ${formatCurrency(materiaPrima.precioPagado ?: 0.0)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Precio unitario: ${formatCurrency(materiaPrima.precioUnitario ?: 0.0)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "Cantidad: ${materiaPrima.getDescripcionCantidad()}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "Total: ${formatCurrency(materiaPrima.precioPagado ?: 0.0)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
             
             IconButton(onClick = onDelete) {
@@ -278,35 +258,39 @@ fun MateriaPrimaItem(
 @Composable
 fun AgregarIngredienteDialog(
     onDismiss: () -> Unit,
-    onAgregar: (String, Double?, Double?, Double?) -> Unit
+    onAgregar: (String, TipoMedicion, Double?, Double?, Double?) -> Unit
 ) {
     var nombre by remember { mutableStateOf("") }
-    var precioKgStr by remember { mutableStateOf("") }
+    var tipoMedicion by remember { mutableStateOf(TipoMedicion.POR_KILO) }
+    var precioUnitarioStr by remember { mutableStateOf("") }
     var precioPagadoStr by remember { mutableStateOf("") }
-    var cantidadKgStr by remember { mutableStateOf("") }
+    var cantidadStr by remember { mutableStateOf("") }
     
-    // Calcular campos automáticamente
-    LaunchedEffect(precioKgStr, precioPagadoStr, cantidadKgStr) {
-        val precioKg = precioKgStr.toDoubleOrNull()
+    // Controlar qué campo fue editado último
+    var ultimoCampoEditado by remember { mutableStateOf<String?>(null) }
+    
+    // Deshabilitar campos hasta que nombre y precio estén llenos
+    val camposHabilitados = nombre.isNotBlank() && precioUnitarioStr.isNotBlank()
+    
+    // Calcular campos automáticamente solo cuando se edita precio pagado o cantidad
+    LaunchedEffect(precioUnitarioStr, precioPagadoStr, cantidadStr, ultimoCampoEditado) {
+        if (!camposHabilitados) return@LaunchedEffect
+        
+        val precioUnitario = precioUnitarioStr.toDoubleOrNull()
         val precioPagado = precioPagadoStr.toDoubleOrNull()
-        val cantidadKg = cantidadKgStr.toDoubleOrNull()
+        val cantidad = cantidadStr.toDoubleOrNull()
         
-        // Solo calcular si hay exactamente 2 campos con valor y el 3ro vacío
-        val filledCount = listOf(precioKg, precioPagado, cantidadKg).count { it != null && it > 0 }
-        
-        if (filledCount == 2) {
-            when {
-                // Caso 1: Tengo precio/kg y cantidad → Calculo precio pagado
-                precioKg != null && cantidadKg != null && precioPagadoStr.isEmpty() -> {
-                    precioPagadoStr = String.format("%.2f", precioKg * cantidadKg)
+        when (ultimoCampoEditado) {
+            "cantidad" -> {
+                // Usuario editó cantidad → Calcular precio pagado
+                if (precioUnitario != null && cantidad != null && precioPagadoStr.isEmpty()) {
+                    precioPagadoStr = String.format("%.2f", precioUnitario * cantidad)
                 }
-                // Caso 2: Tengo precio/kg y precio pagado → Calculo cantidad
-                precioKg != null && precioPagado != null && cantidadKgStr.isEmpty() -> {
-                    cantidadKgStr = String.format("%.2f", precioPagado / precioKg)
-                }
-                // Caso 3: Tengo precio pagado y cantidad → Calculo precio/kg
-                precioPagado != null && cantidadKg != null && precioKgStr.isEmpty() -> {
-                    precioKgStr = String.format("%.2f", precioPagado / cantidadKg)
+            }
+            "precioPagado" -> {
+                // Usuario editó precio pagado → Calcular cantidad
+                if (precioUnitario != null && precioUnitario > 0 && precioPagado != null && cantidadStr.isEmpty()) {
+                    cantidadStr = String.format("%.2f", precioPagado / precioUnitario)
                 }
             }
         }
@@ -320,11 +304,12 @@ fun AgregarIngredienteDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Llena al menos 2 campos y el tercero se calculará automáticamente",
+                    text = "Primero llena nombre y precio, luego elige llenar precio pagado o cantidad",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
+                // Nombre del ingrediente
                 OutlinedTextField(
                     value = nombre,
                     onValueChange = { nombre = it },
@@ -333,48 +318,126 @@ fun AgregarIngredienteDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 
+                // Selector de tipo de medición
+                Text(
+                    text = "Tipo de medición:",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TipoMedicion.values().forEach { tipo ->
+                        FilterChip(
+                            selected = tipoMedicion == tipo,
+                            onClick = { 
+                                tipoMedicion = tipo
+                                // Limpiar campos al cambiar tipo
+                                precioUnitarioStr = ""
+                                precioPagadoStr = ""
+                                cantidadStr = ""
+                                ultimoCampoEditado = null
+                            },
+                            label = { Text(tipo.getLabel()) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                
+                Divider()
+                
+                // Precio unitario (siempre habilitado)
                 OutlinedTextField(
-                    value = precioKgStr,
-                    onValueChange = { precioKgStr = it },
-                    label = { Text("Precio por kg") },
+                    value = precioUnitarioStr,
+                    onValueChange = { 
+                        precioUnitarioStr = it
+                        // Limpiar los otros campos cuando se modifica el precio
+                        precioPagadoStr = ""
+                        cantidadStr = ""
+                        ultimoCampoEditado = null
+                    },
+                    label = { Text(tipoMedicion.getLabelPrecio()) },
                     placeholder = { Text("0.00") },
                     prefix = { Text("$") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
                 
+                if (!camposHabilitados && nombre.isNotBlank()) {
+                    Text(
+                        text = "⚠️ Llena el precio antes de continuar",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                
+                // Precio pagado
                 OutlinedTextField(
                     value = precioPagadoStr,
-                    onValueChange = { precioPagadoStr = it },
+                    onValueChange = { 
+                        precioPagadoStr = it
+                        ultimoCampoEditado = "precioPagado"
+                    },
                     label = { Text("Precio pagado (total)") },
                     placeholder = { Text("0.00") },
                     prefix = { Text("$") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = camposHabilitados
                 )
                 
+                // Cantidad
                 OutlinedTextField(
-                    value = cantidadKgStr,
-                    onValueChange = { cantidadKgStr = it },
-                    label = { Text("Cantidad (kg)") },
+                    value = cantidadStr,
+                    onValueChange = { 
+                        cantidadStr = it
+                        ultimoCampoEditado = "cantidad"
+                    },
+                    label = { Text(tipoMedicion.getLabelCantidad()) },
                     placeholder = { Text("0.00") },
-                    suffix = { Text("kg") },
+                    suffix = { 
+                        Text(
+                            when (tipoMedicion) {
+                                TipoMedicion.POR_KILO -> "kg"
+                                TipoMedicion.POR_UNIDAD -> "unidades"
+                            }
+                        ) 
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = camposHabilitados
                 )
+                
+                // Información sobre el autocálculo
+                if (camposHabilitados) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
+                        Text(
+                            text = "💡 Llena precio pagado O cantidad, el otro campo se calculará automáticamente",
+                            modifier = Modifier.padding(8.dp),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    val precioKg = precioKgStr.toDoubleOrNull()
+                    val precioUnitario = precioUnitarioStr.toDoubleOrNull()
                     val precioPagado = precioPagadoStr.toDoubleOrNull()
-                    val cantidadKg = cantidadKgStr.toDoubleOrNull()
+                    val cantidad = cantidadStr.toDoubleOrNull()
                     
-                    if (nombre.isNotBlank()) {
-                        onAgregar(nombre.trim(), precioKg, precioPagado, cantidadKg)
+                    if (nombre.isNotBlank() && precioUnitario != null) {
+                        onAgregar(nombre.trim(), tipoMedicion, precioUnitario, precioPagado, cantidad)
                     }
-                }
+                },
+                enabled = nombre.isNotBlank() && precioUnitarioStr.toDoubleOrNull() != null
             ) {
                 Text("Agregar")
             }

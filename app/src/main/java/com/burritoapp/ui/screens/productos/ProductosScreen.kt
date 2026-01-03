@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.burritoapp.data.entity.ProductoConMateriaPrima
+import com.burritoapp.ui.components.EditarCantidadDialog
 import com.burritoapp.ui.viewmodel.ProductoViewModel
 import java.text.NumberFormat
 import java.util.*
@@ -83,6 +84,8 @@ fun ProductosScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(productos) { productoConMP ->
+                    var showDialogEditarCantidad by remember { mutableStateOf(false) }
+                    
                     ProductoItem(
                         productoConMP = productoConMP,
                         onEdit = {
@@ -93,8 +96,24 @@ fun ProductosScreen(
                         },
                         onDelete = {
                             viewModel.eliminarProducto(productoConMP.producto.id)
+                        },
+                        onEditarCantidad = {
+                            showDialogEditarCantidad = true
                         }
                     )
+                    
+                    // Dialog de editar cantidad
+                    if (showDialogEditarCantidad) {
+                        EditarCantidadDialog(
+                            nombreProducto = productoConMP.producto.nombre,
+                            cantidadActual = productoConMP.producto.cantidadProducida,
+                            onDismiss = { showDialogEditarCantidad = false },
+                            onGuardar = { cantidad ->
+                                viewModel.actualizarCantidadProducida(productoConMP.producto.id, cantidad)
+                                showDialogEditarCantidad = false
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -118,7 +137,8 @@ fun ProductosScreen(
 fun ProductoItem(
     productoConMP: ProductoConMateriaPrima,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onEditarCantidad: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -145,21 +165,51 @@ fun ProductoItem(
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    if (productoConMP.producto.cantidadProducida != null) {
-                        Text(
-                            text = "Producidos: ${productoConMP.producto.cantidadProducida} unidades",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
                 
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Eliminar",
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Botón de cantidad producida
+                    if (productoConMP.producto.cantidadProducida != null) {
+                        OutlinedButton(
+                            onClick = onEditarCantidad,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "${productoConMP.producto.cantidadProducida}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "unidades",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = onEditarCantidad,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "Sin registrar",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                    
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Eliminar",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
             

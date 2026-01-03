@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,10 +16,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.burritoapp.data.entity.Producto
 import com.burritoapp.data.entity.VentaConProducto
 import com.burritoapp.data.entity.EstadoVenta
+import com.burritoapp.data.entity.Venta
 import com.burritoapp.ui.components.IndicadorProgreso
 import com.burritoapp.ui.components.NotificacionCard
 import com.burritoapp.ui.components.TipoNotificacion
 import com.burritoapp.ui.components.RegistrarProduccionDialog
+import com.burritoapp.ui.components.EditarProductoDiaDialog
+import com.burritoapp.ui.components.RegistrarVentaDialog
+import com.burritoapp.ui.components.ConfirmacionDialog
 import com.burritoapp.ui.viewmodel.ProductoViewModel
 import com.burritoapp.ui.viewmodel.VentaViewModel
 import kotlinx.coroutines.launch
@@ -37,7 +42,13 @@ fun DashboardScreen(
     val resumenDelDia by ventaViewModel.resumenDelDia.collectAsState()
     
     var showDialogRegistrar by remember { mutableStateOf(false) }
+    var showDialogEditarProducto by remember { mutableStateOf(false) }
     var productoARegistrar by remember { mutableStateOf<Producto?>(null) }
+    var mostrarDialogVenta by remember { mutableStateOf(false) }
+    var precioSugeridoVenta by remember { mutableStateOf(0.0) }
+    var ventaAEditar by remember { mutableStateOf<Venta?>(null) }
+    var unidadesDisponibles by remember { mutableStateOf(0) }
+    
     val scope = rememberCoroutineScope()
     
     Scaffold(
@@ -49,6 +60,28 @@ fun DashboardScreen(
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
+        },
+        floatingActionButton = {
+            if (productoDelDia != null && productoDelDia!!.producto.cantidadProducida != null && 
+                productoDelDia!!.producto.cantidadProducida!! > 0) {
+                
+                FloatingActionButton(
+                    onClick = { 
+                        scope.launch {
+                            val calculo = productoViewModel.calcularPrecio(productoDelDia!!.producto.id)
+                            precioSugeridoVenta = calculo?.precioSugerido ?: 0.0
+                            ventaAEditar = null
+                            mostrarDialogVenta = true
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Text(
+                        text = "+",
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                }
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -263,11 +296,27 @@ fun DashboardScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = "🌮 Producto del Día",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🌮 Producto del Día",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                
+                                // Botón de editar
+                                if (producto.producto.cantidadProducida != null) {
+                                    OutlinedButton(
+                                        onClick = { showDialogEditarProducto = true }
+                                    ) {
+                                        Text("Editar")
+                                    }
+                                }
+                            }
+                            
                             Text(
                                 text = producto.producto.nombre,
                                 style = MaterialTheme.typography.headlineSmall,
@@ -301,12 +350,42 @@ fun DashboardScreen(
                 }
                 
                 items(ventasDelDia) { ventaConProducto ->
+                    var showDialogEliminar by remember { mutableStateOf(false) }
+                    
                     VentaItem(
                         ventaConProducto = ventaConProducto,
                         onMarcarPagada = { ventaId, estado ->
                             ventaViewModel.marcarComoPagada(ventaId, estado)
+                        },
+                        onEditar = {
+                            scope.launch {
+                                val calculo = productoViewModel.calcularPrecio(ventaConProducto.venta.productoId)
+                                precioSugeridoVenta = calculo?.precioSugerido ?: 0.0
+                                ventaAEditar = ventaConProducto.venta
+                                mostrarDialogVenta = true
+                            }
+                        },
+                        onEliminar = {
+                            showDialogEliminar = true
                         }
                     )
+                    
+                    // Dialog de confirmación para eliminar
+                    if (showDialogEliminar) {
+                        ConfirmacionDialog(
+                            titulo = "Eliminar Venta",
+                            mensaje = "¿Estás seguro de que deseas eliminar esta venta de ${ventaConProducto.venta.cantidad} unidad(es) por ${formatCurrency(ventaConProducto.venta.montoTotal())}?",
+                            textoConfirmar = "Eliminar",
+                            textoCancel = "Cancelar",
+                            onConfirmar = {
+                                ventaViewModel.eliminarVenta(ventaConProducto.venta)
+                                showDialogEliminar = false
+                            },
+                            onDismiss = {
+                                showDialogEliminar = false
+                            }
+                        )
+                    }
                 }
             } else if (productoDelDia != null && productoDelDia!!.producto.cantidadProducida != null) {
                 item {
@@ -357,6 +436,80 @@ fun DashboardScreen(
                             onCalculoCompleto(calculo)
                         }
                     }
+                }
+            }
+        )
+    }
+
+    // Dialog de editar producto del día
+    if (showDialogEditarProducto && productoDelDia != null) {
+        // Obtener productos con materia prima
+        val productosConMateriaPrima = productoViewModel.productosSemanaActual.collectAsState().value
+            .filter { it.materiaPrima.isNotEmpty() }
+        
+        EditarProductoDiaDialog(
+            productoActual = productoDelDia!!,
+            productosDisponibles = productosConMateriaPrima,
+            onDismiss = { showDialogEditarProducto = false },
+            onGuardar = { productoId, cantidad ->
+                scope.launch {
+                    productoViewModel.actualizarProductoDelDia(
+                        productoId = productoId,
+                        cantidad = cantidad,
+                        fecha = com.burritoapp.data.entity.Producto.getTodayDate()
+                    ) {
+                        showDialogEditarProducto = false
+                    }
+                }
+            }
+        )
+    }
+
+    // Dialog de registrar/editar venta
+    if (mostrarDialogVenta && productoDelDia != null) {
+        // Calcular unidades disponibles
+        LaunchedEffect(productoDelDia, ventaAEditar) {
+            unidadesDisponibles = ventaViewModel.getUnidadesDisponibles(
+                productoDelDia!!.producto.id,
+                ventaAEditar?.id
+            )
+        }
+        
+        RegistrarVentaDialog(
+            productoDelDia = productoDelDia!!,
+            precioSugerido = precioSugeridoVenta,
+            unidadesDisponibles = unidadesDisponibles,
+            ventaAEditar = ventaAEditar,
+            onDismiss = { 
+                mostrarDialogVenta = false
+                ventaAEditar = null
+            },
+            onRegistrar = { cantidad, precioReal, nota, estado ->
+                if (ventaAEditar == null) {
+                    // Registrar nueva venta
+                    ventaViewModel.registrarVenta(
+                        productoId = productoDelDia!!.producto.id,
+                        cantidad = cantidad,
+                        precioSugerido = precioSugeridoVenta,
+                        precioReal = precioReal,
+                        nota = nota,
+                        estado = estado,
+                        onSuccess = {
+                            mostrarDialogVenta = false
+                        }
+                    )
+                } else {
+                    // Actualizar venta existente
+                    ventaViewModel.actualizarVenta(
+                        ventaAEditar!!.copy(
+                            cantidad = cantidad,
+                            precioReal = precioReal,
+                            nota = nota,
+                            estado = estado
+                        )
+                    )
+                    mostrarDialogVenta = false
+                    ventaAEditar = null
                 }
             }
         )
@@ -418,10 +571,13 @@ private fun InfoChip(
 @Composable
 fun VentaItem(
     ventaConProducto: VentaConProducto,
-    onMarcarPagada: (Int, EstadoVenta) -> Unit = { _, _ -> }
+    onMarcarPagada: (Int, EstadoVenta) -> Unit = { _, _ -> },
+    onEditar: () -> Unit = {},
+    onEliminar: () -> Unit = {}
 ) {
     val venta = ventaConProducto.venta
     var showMenuEstado by remember { mutableStateOf(false) }
+    var showMenuAcciones by remember { mutableStateOf(false) }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -442,7 +598,6 @@ fun VentaItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                // Cantidad y nota
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -460,7 +615,6 @@ fun VentaItem(
                 
                 Spacer(modifier = Modifier.height(4.dp))
                 
-                // Precios
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -485,7 +639,6 @@ fun VentaItem(
                     )
                 }
                 
-                // Monto total
                 Text(
                     text = "Total: ${formatCurrency(venta.montoTotal())}",
                     style = MaterialTheme.typography.titleSmall,
@@ -494,49 +647,88 @@ fun VentaItem(
                 )
             }
             
-            // Estado
-            Box {
-                Card(
-                    onClick = { 
-                        if (venta.estado == EstadoVenta.PENDIENTE) {
-                            showMenuEstado = true
-                        }
-                    },
-                    colors = CardDefaults.cardColors(
-                        containerColor = when (venta.estado) {
-                            EstadoVenta.PAGADO_EFECTIVO -> MaterialTheme.colorScheme.primaryContainer
-                            EstadoVenta.PAGADO_TARJETA -> MaterialTheme.colorScheme.tertiaryContainer
-                            EstadoVenta.PENDIENTE -> MaterialTheme.colorScheme.error
-                        }
-                    )
-                ) {
-                    Text(
-                        text = "${venta.estado.getIcono()} ${venta.estado.getNombre()}",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Menú de acciones (editar/eliminar)
+                Box {
+                    IconButton(onClick = { showMenuAcciones = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Más opciones"
+                        )
+                    }
+                    
+                    DropdownMenu(
+                        expanded = showMenuAcciones,
+                        onDismissRequest = { showMenuAcciones = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("✏️ Editar") },
+                            onClick = {
+                                onEditar()
+                                showMenuAcciones = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { 
+                                Text(
+                                    "🗑️ Eliminar",
+                                    color = MaterialTheme.colorScheme.error
+                                ) 
+                            },
+                            onClick = {
+                                onEliminar()
+                                showMenuAcciones = false
+                            }
+                        )
+                    }
                 }
                 
-                // Menu para marcar como pagada
-                DropdownMenu(
-                    expanded = showMenuEstado,
-                    onDismissRequest = { showMenuEstado = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("${EstadoVenta.PAGADO_EFECTIVO.getIcono()} ${EstadoVenta.PAGADO_EFECTIVO.getNombre()}") },
-                        onClick = {
-                            onMarcarPagada(venta.id, EstadoVenta.PAGADO_EFECTIVO)
-                            showMenuEstado = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("${EstadoVenta.PAGADO_TARJETA.getIcono()} ${EstadoVenta.PAGADO_TARJETA.getNombre()}") },
-                        onClick = {
-                            onMarcarPagada(venta.id, EstadoVenta.PAGADO_TARJETA)
-                            showMenuEstado = false
-                        }
-                    )
+                // Estado
+                Box {
+                    Card(
+                        onClick = { 
+                            if (venta.estado == EstadoVenta.PENDIENTE) {
+                                showMenuEstado = true
+                            }
+                        },
+                        colors = CardDefaults.cardColors(
+                            containerColor = when (venta.estado) {
+                                EstadoVenta.PAGADO_EFECTIVO -> MaterialTheme.colorScheme.primaryContainer
+                                EstadoVenta.PAGADO_TARJETA -> MaterialTheme.colorScheme.tertiaryContainer
+                                EstadoVenta.PENDIENTE -> MaterialTheme.colorScheme.error
+                            }
+                        )
+                    ) {
+                        Text(
+                            text = "${venta.estado.getIcono()} ${venta.estado.getNombre()}",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    
+                    DropdownMenu(
+                        expanded = showMenuEstado,
+                        onDismissRequest = { showMenuEstado = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("${EstadoVenta.PAGADO_EFECTIVO.getIcono()} ${EstadoVenta.PAGADO_EFECTIVO.getNombre()}") },
+                            onClick = {
+                                onMarcarPagada(venta.id, EstadoVenta.PAGADO_EFECTIVO)
+                                showMenuEstado = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("${EstadoVenta.PAGADO_TARJETA.getIcono()} ${EstadoVenta.PAGADO_TARJETA.getNombre()}") },
+                            onClick = {
+                                onMarcarPagada(venta.id, EstadoVenta.PAGADO_TARJETA)
+                                showMenuEstado = false
+                            }
+                        )
+                    }
                 }
             }
         }

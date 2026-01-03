@@ -21,30 +21,34 @@ class VentaViewModel(application: Application) : AndroidViewModel(application) {
     val ventasPendientes: StateFlow<List<VentaConProducto>>
     val resumenDelDia: StateFlow<ResumenVentas?>
     
+    // Filtro por rango de fechas
+    private val _ventasRango = MutableStateFlow<List<VentaConProducto>>(emptyList())
+    val ventasRango: StateFlow<List<VentaConProducto>> = _ventasRango
+
     init {
         val ventaDao = AppDatabase.getDatabase(application).ventaDao()
         val productoDao = AppDatabase.getDatabase(application).productoDao()
         val gastoFijoDao = AppDatabase.getDatabase(application).gastoFijoDao()
         val configuracionDao = AppDatabase.getDatabase(application).configuracionDao()
-        
+
         repository = VentaRepository(ventaDao, productoDao, gastoFijoDao, configuracionDao)
-        
+
         val fechaHoy = Producto.getTodayDate()
-        
+
         ventasDelDia = repository.getVentasDelDia(fechaHoy)
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
-        
+
         ventasPendientes = repository.getVentasPendientes()
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
-        
+
         // Calcular resumen automáticamente cuando cambian las ventas
         resumenDelDia = ventasDelDia.map {
             repository.getResumenVentasDia(fechaHoy)
@@ -54,7 +58,7 @@ class VentaViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = null
         )
     }
-    
+
     fun registrarVenta(
         productoId: Int,
         cantidad: Int,
@@ -78,22 +82,35 @@ class VentaViewModel(application: Application) : AndroidViewModel(application) {
             onSuccess()
         }
     }
-    
+
     fun actualizarVenta(venta: Venta) {
         viewModelScope.launch {
             repository.updateVenta(venta)
         }
     }
-    
+
     fun eliminarVenta(venta: Venta) {
         viewModelScope.launch {
             repository.deleteVenta(venta)
         }
     }
-    
+
     fun marcarComoPagada(ventaId: Int, estado: EstadoVenta) {
         viewModelScope.launch {
             repository.marcarComoPagada(ventaId, estado)
+        }
+    }
+
+    suspend fun getUnidadesDisponibles(productoId: Int, ventaEditandoId: Int? = null): Int {
+        val fecha = com.burritoapp.data.entity.Producto.getTodayDate()
+        return repository.getUnidadesDisponibles(productoId, fecha, ventaEditandoId)
+    }
+
+    fun cargarVentasRango(fechaInicio: String, fechaFin: String) {
+        viewModelScope.launch {
+            repository.getVentasRango(fechaInicio, fechaFin).collect {
+                _ventasRango.value = it
+            }
         }
     }
 }
