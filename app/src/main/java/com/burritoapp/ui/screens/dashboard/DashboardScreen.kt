@@ -453,10 +453,10 @@ fun DashboardScreen(
             onDismiss = { showDialogEditarProducto = false },
             onGuardar = { productoId, cantidad ->
                 scope.launch {
-                    productoViewModel.actualizarProductoDelDia(
-                        productoId = productoId,
-                        cantidad = cantidad,
-                        fecha = com.burritoapp.data.entity.Producto.getTodayDate()
+                    productoViewModel.cambiarProductoDelDia(
+                        nuevoProductoId = productoId,
+                        nuevaCantidad = cantidad,
+                        productoAnteriorId = productoDelDia?.producto?.id
                     ) {
                         showDialogEditarProducto = false
                     }

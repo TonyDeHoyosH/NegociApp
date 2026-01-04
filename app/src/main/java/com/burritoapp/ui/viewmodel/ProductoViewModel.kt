@@ -100,11 +100,14 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
             onSuccess()
         }
     }
-    
-    fun actualizarProductoDelDia(productoId: Int, cantidad: Int, fecha: String, onSuccess: () -> Unit = {}) {
+
+    fun cambiarProductoDelDia(nuevoProductoId: Int, nuevaCantidad: Int, productoAnteriorId: Int?, onSuccess: () -> Unit) {
         viewModelScope.launch {
-            repository.registrarProduccionDelDia(productoId, cantidad)
-            actualizarEstadoAutomatico(productoId)
+            repository.cambiarProductoDelDia(nuevoProductoId, nuevaCantidad, productoAnteriorId)
+            actualizarEstadoAutomatico(nuevoProductoId)
+            if (productoAnteriorId != null) {
+                actualizarEstadoAutomatico(productoAnteriorId)
+            }
             onSuccess()
         }
     }

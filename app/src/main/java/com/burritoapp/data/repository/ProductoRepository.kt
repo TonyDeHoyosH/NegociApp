@@ -49,30 +49,25 @@ class ProductoRepository(
         productoDao.softDelete(id)
     }
     
-    // NUEVO: Registrar producción del día
     suspend fun registrarProduccionDelDia(productoId: Int, cantidad: Int) {
         val fecha = Producto.getTodayDate()
         productoDao.updateProduccionDelDia(productoId, cantidad, fecha)
     }
 
-    // Alias para compatibilidad con ViewModel
     suspend fun updateCantidadProducida(productoId: Int, cantidad: Int) {
         registrarProduccionDelDia(productoId, cantidad)
     }
     
-    // NUEVO: Calcular precio mínimo y sugerido
     suspend fun calcularPrecio(productoId: Int): CalculoPrecio? {
         val productoConMP = productoDao.getProductoConMateriaPrima(productoId) ?: return null
         val cantidad = productoConMP.producto.cantidadProducida ?: return null
         
-        // Obtener configuraciones
         val totalGastosMes = gastoFijoDao.getTotalGastosFijosMes() ?: 0.0
         val configSueldo = configuracionDao.getConfiguracionSueldo().first()
         val configGeneral = configuracionDao.getConfiguracionGeneral().first()
         
         if (configSueldo == null || configGeneral == null) return null
         
-        // Calcular costos
         val costoMateriaPrima = productoConMP.costoTotalMateriaPrima()
         val gastosFijosDia = configGeneral.calcularGastoFijoDiario(totalGastosMes)
         val sueldosDia = configSueldo.sueldoTotalDiario()
@@ -86,7 +81,6 @@ class ProductoRepository(
         )
     }
     
-    // Materia Prima
     suspend fun insertMateriaPrima(materiaPrima: MateriaPrima): Long {
         val materiaPrimaCalculada = materiaPrima.calcularCampoFaltante()
         return materiaPrimaDao.insert(materiaPrimaCalculada)
@@ -110,7 +104,20 @@ class ProductoRepository(
         materiaPrimaDao.deleteAllByProducto(productoId)
     }
 
-    // Cambiar estado manualmente
+    suspend fun cambiarProductoDelDia(nuevoProductoId: Int, nuevaCantidad: Int, productoAnteriorId: Int?) {
+        val fechaHoy = Producto.getTodayDate()
+
+        if (productoAnteriorId != null && productoAnteriorId != nuevoProductoId) {
+            getProductoConMateriaPrima(productoAnteriorId)?.producto?.let { productoAnterior ->
+                updateProducto(productoAnterior.copy(cantidadProducida = null, fechaProduccion = null))
+            }
+        }
+
+        getProductoConMateriaPrima(nuevoProductoId)?.producto?.let { nuevoProducto ->
+            updateProducto(nuevoProducto.copy(cantidadProducida = nuevaCantidad, fechaProduccion = fechaHoy))
+        }
+    }
+
     suspend fun cambiarEstadoProducto(productoId: Int, nuevoEstado: EstadoProducto) {
         val producto = productoDao.getProductoConMateriaPrima(productoId)?.producto
         if (producto != null) {
@@ -118,28 +125,23 @@ class ProductoRepository(
         }
     }
 
-    // Actualizar estado automáticamente según los datos
     suspend fun actualizarEstadoAutomatico(productoId: Int) {
         val productoConMP = productoDao.getProductoConMateriaPrima(productoId) ?: return
         val producto = productoConMP.producto
         
-        // No actualizar si está marcado como completado manualmente
         if (producto.estado == EstadoProducto.COMPLETADO) return
         
-        // Calcular unidades vendidas
         val fecha = producto.fechaProduccion ?: producto.fechaCreacion
         val ventas = ventaDao.getVentasDelDia(fecha).first()
         val unidadesVendidas = ventas
             .filter { it.venta.productoId == productoId }
             .sumOf { it.venta.cantidad }
         
-        // Calcular estado automático
         val nuevoEstado = producto.calcularEstadoAutomatico(
             tieneMateriaPrima = productoConMP.materiaPrima.isNotEmpty(),
             unidadesVendidas = unidadesVendidas
         )
         
-        // Actualizar solo si cambió
         if (nuevoEstado != producto.estado) {
             productoDao.update(producto.copy(estado = nuevoEstado))
         }
