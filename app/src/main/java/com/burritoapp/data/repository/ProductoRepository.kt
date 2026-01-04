@@ -4,9 +4,11 @@ import com.burritoapp.data.dao.ProductoDao
 import com.burritoapp.data.dao.MateriaPrimaDao
 import com.burritoapp.data.dao.GastoFijoDao
 import com.burritoapp.data.dao.ConfiguracionDao
+import com.burritoapp.data.dao.VentaDao
 import com.burritoapp.data.entity.Producto
 import com.burritoapp.data.entity.MateriaPrima
 import com.burritoapp.data.entity.ProductoConMateriaPrima
+import com.burritoapp.data.entity.EstadoProducto
 import com.burritoapp.data.model.CalculoPrecio
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -15,7 +17,8 @@ class ProductoRepository(
     private val productoDao: ProductoDao,
     private val materiaPrimaDao: MateriaPrimaDao,
     private val gastoFijoDao: GastoFijoDao,
-    private val configuracionDao: ConfiguracionDao
+    private val configuracionDao: ConfiguracionDao,
+    private val ventaDao: VentaDao
 ) {
     
     fun getProductosSemanaActual(semana: String): Flow<List<ProductoConMateriaPrima>> {
@@ -105,5 +108,40 @@ class ProductoRepository(
     
     suspend fun deleteAllMateriaPrimaByProducto(productoId: Int) {
         materiaPrimaDao.deleteAllByProducto(productoId)
+    }
+
+    // Cambiar estado manualmente
+    suspend fun cambiarEstadoProducto(productoId: Int, nuevoEstado: EstadoProducto) {
+        val producto = productoDao.getProductoConMateriaPrima(productoId)?.producto
+        if (producto != null) {
+            productoDao.update(producto.copy(estado = nuevoEstado))
+        }
+    }
+
+    // Actualizar estado automáticamente según los datos
+    suspend fun actualizarEstadoAutomatico(productoId: Int) {
+        val productoConMP = productoDao.getProductoConMateriaPrima(productoId) ?: return
+        val producto = productoConMP.producto
+        
+        // No actualizar si está marcado como completado manualmente
+        if (producto.estado == EstadoProducto.COMPLETADO) return
+        
+        // Calcular unidades vendidas
+        val fecha = producto.fechaProduccion ?: producto.fechaCreacion
+        val ventas = ventaDao.getVentasDelDia(fecha).first()
+        val unidadesVendidas = ventas
+            .filter { it.venta.productoId == productoId }
+            .sumOf { it.venta.cantidad }
+        
+        // Calcular estado automático
+        val nuevoEstado = producto.calcularEstadoAutomatico(
+            tieneMateriaPrima = productoConMP.materiaPrima.isNotEmpty(),
+            unidadesVendidas = unidadesVendidas
+        )
+        
+        // Actualizar solo si cambió
+        if (nuevoEstado != producto.estado) {
+            productoDao.update(producto.copy(estado = nuevoEstado))
+        }
     }
 }

@@ -16,7 +16,7 @@ import com.burritoapp.data.entity.*
         MateriaPrima::class,
         Venta::class
     ],
-    version = 5,  // INCREMENTA LA VERSIÓN
+    version = 6,  // INCREMENTA LA VERSIÓN
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -8,8 +8,9 @@ import com.burritoapp.data.entity.Producto
 import com.burritoapp.data.entity.MateriaPrima
 import com.burritoapp.data.entity.ProductoConMateriaPrima
 import com.burritoapp.data.entity.TipoMedicion
-import com.burritoapp.data.repository.ProductoRepository
+import com.burritoapp.data.entity.EstadoProducto
 import com.burritoapp.data.model.CalculoPrecio
+import com.burritoapp.data.repository.ProductoRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -22,12 +23,18 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
     val productosSinProduccion: StateFlow<List<Producto>>
     
     init {
-        val database = AppDatabase.getDatabase(application)
+        val productoDao = AppDatabase.getDatabase(application).productoDao()
+        val materiaPrimaDao = AppDatabase.getDatabase(application).materiaPrimaDao()
+        val gastoFijoDao = AppDatabase.getDatabase(application).gastoFijoDao()
+        val configuracionDao = AppDatabase.getDatabase(application).configuracionDao()
+        val ventaDao = AppDatabase.getDatabase(application).ventaDao()
+        
         repository = ProductoRepository(
-            database.productoDao(),
-            database.materiaPrimaDao(),
-            database.gastoFijoDao(),
-            database.configuracionDao()
+            productoDao, 
+            materiaPrimaDao, 
+            gastoFijoDao, 
+            configuracionDao,
+            ventaDao
         )
         
         val semanaActual = Producto.getCurrentWeek()
@@ -45,7 +52,7 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = null
             )
-            
+        
         productosSinProduccion = repository.getProductosSinProduccion()
             .stateIn(
                 scope = viewModelScope,
@@ -54,13 +61,13 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
             )
     }
     
-    // Crear producto y retornar su ID
     fun crearProducto(nombre: String, onSuccess: (Long) -> Unit) {
         viewModelScope.launch {
             val producto = Producto(
                 nombre = nombre,
                 fechaCreacion = Producto.getTodayDate(),
-                semana = Producto.getCurrentWeek()
+                semana = Producto.getCurrentWeek(),
+                estado = EstadoProducto.PLANEADO
             )
             val productoId = repository.insertProducto(producto)
             onSuccess(productoId)
@@ -81,30 +88,32 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
     
     fun actualizarCantidadProducida(productoId: Int, cantidad: Int) {
         viewModelScope.launch {
-            repository.updateCantidadProducida(productoId, cantidad)
+            repository.registrarProduccionDelDia(productoId, cantidad)
+            actualizarEstadoAutomatico(productoId)
         }
     }
     
     fun registrarProduccionDelDia(productoId: Int, cantidad: Int, onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
             repository.registrarProduccionDelDia(productoId, cantidad)
+            actualizarEstadoAutomatico(productoId)
             onSuccess()
         }
     }
     
     fun actualizarProductoDelDia(productoId: Int, cantidad: Int, fecha: String, onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
-            // Actualizar el producto seleccionado
             repository.registrarProduccionDelDia(productoId, cantidad)
+            actualizarEstadoAutomatico(productoId)
             onSuccess()
         }
     }
-
+    
     suspend fun calcularPrecio(productoId: Int): CalculoPrecio? {
         return repository.calcularPrecio(productoId)
     }
     
-    // Materia Prima
+    // Materia Prima - FIRMA ACTUALIZADA
     fun agregarMateriaPrima(
         productoId: Int,
         nombre: String,
@@ -127,6 +136,7 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
             
             if (materiaPrima.esValido()) {
                 repository.insertMateriaPrima(materiaPrima)
+                actualizarEstadoAutomatico(productoId)
                 onSuccess()
             } else {
                 onError("Debes llenar al menos 2 campos (Precio unitario, Precio pagado o Cantidad)")
@@ -145,6 +155,28 @@ class ProductoViewModel(application: Application) : AndroidViewModel(application
     fun eliminarMateriaPrima(materiaPrima: MateriaPrima) {
         viewModelScope.launch {
             repository.deleteMateriaPrima(materiaPrima)
+            actualizarEstadoAutomatico(materiaPrima.productoId)
+        }
+    }
+    
+    // Estados de productos
+    fun cambiarEstadoProducto(productoId: Int, nuevoEstado: EstadoProducto) {
+        viewModelScope.launch {
+            repository.cambiarEstadoProducto(productoId, nuevoEstado)
+        }
+    }
+    
+    fun actualizarEstadoAutomatico(productoId: Int) {
+        viewModelScope.launch {
+            repository.actualizarEstadoAutomatico(productoId)
+        }
+    }
+    
+    fun actualizarTodosLosEstados() {
+        viewModelScope.launch {
+            productosSemanaActual.value.forEach { productoConMP ->
+                repository.actualizarEstadoAutomatico(productoConMP.producto.id)
+            }
         }
     }
 }
